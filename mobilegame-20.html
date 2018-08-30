@@ -1,0 +1,1192 @@
+<!DOCTYPE html> 
+<html>
+<head>
+	<title>Page Title</title>
+	<meta charset="UTF-8"> <!-- for HTML5 -->
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" href="./jquery-2/jquery.mobile-1.4.5.css" />
+	<script src="./js/jquery.js"></script>
+	<script src="./js/jquery.mobile-1.4.5.min.js"></script>
+	<script src="Global.js"></script>
+	<script src="pokerImgMap.js"></script>
+	<script src="socketplugin.js"></script>
+	<script src="AICardType.js" ></script>
+	<script src="GameRule.js" ></script>
+	<script src="AILogic.js"></script>
+	<link rel="stylesheet" type="text/css" href="./gamestyle.css">
+	<script type="text/javascript">
+
+	//当前的游戏中用那个模式：自动拆牌，不自动拆牌
+	var gameModel = {
+		AutoSplitCardModel:1,
+		NonSplitCardModel:2,
+	}
+	window.isMySeq = false;
+	//默认使用自动拆牌的模式
+	window.curGameUsingModel = gameModel.AutoSplitCardModel;
+	var PlayerReadyOutCardsArray = [];//记录等待出的牌，在不拆牌的时候用
+	var PlayersArray = [];//记录所有的玩家
+	//这个是全局信息
+    window.LocalPlayerInfo = {
+    	playerId:'20',
+    	playerName:'',
+    	playerRole:'',
+	   	RoomId:0,
+	   	RoomLevel:0,
+	   	positionId:0,
+    };
+      window.Card_TYPE_MAP={
+      		kingBomb:[],
+      		bomb:[],
+      		three:[],
+      		plane:[],
+      		progression:[],
+      		progressionPairs:[],
+      		one:[],
+      		pairs:[]
+
+    	 };
+    window.PLAYER_CARD_INFO= {};
+    // var curCardList = [];//保存当前的牌，如果出牌后要去掉
+    // var curCardTypeObj = {
+    // 	kingBoom:[],//王炸
+    // 	bomb:[]
+    // }
+    window.cardsLoginObj = null;//如果发牌，就创建这个对象，并且一直保留
+
+   window.PrePlayer={};//记录上家玩家
+   PrePlayer.playCards = [];//记录出牌
+
+
+
+	 window.createsocket = function ( ) {
+	 	    var Socket1 = $.websocket({
+	        domain:"192.168.2.112",   //这是与服务器的域名或IP192.168.2.111
+	        port:'8081',                  //8080这是服务器端口号
+	        protocol:"doudizhuGame/websocket", //user/websocket/login这东西可有可无,组合起来就是 ws://www.qhnovel.com:8080/test
+	        onInit:function (argument) {
+	        	// body...
+	        	console.log('socket init .......');
+	        },
+	        onOpen:function(event){
+	            console.log("已经与服务端握手,onOpen可省略不写");
+	            $("button[data-custom=authBtn]").click();
+	            // authfunc();
+
+	        },
+	        onError:function(event){
+	            console.log("发生了错误,onError可省略不写");
+	        },
+	        onSend:function(msg){
+	        	console.log("send:"+msg);
+	            console.log("发送数据额外的代码,可省略不写");
+	        },
+	        onMessage:function(result,nTime){
+
+
+	            console.log("从服务端收到的数据:" + result);
+	            console.log("最近一次发送数据到现在接收一共使用时间:" + nTime);
+
+	            let  jsonObj = JSON.parse(result);
+	            let methodName = jsonObj.method;
+	            console.log("method Nanme = ",methodName);
+			//  room:{roomNum:xx,curPersonNum:xx,roomStatus:xx,playerList:[{id:100,name:xx,position:xx,status:xx}
+			// {id:100,name:xx,position:xx,status:xx}
+			// {id:100,name:xx,position:xx,status:xx}]}
+
+			// {"method":"foundRoom","room":{"roomId":1,"difen":0,"beishu":0,
+			// "playerList":[{"userId":1,"userName":"zajjg","prepare":0,"position":1,"integral":0,"job":"nongmin"}]}}
+	            // 从服务端收到的数据:{"method":"enterRoom","room":{"roomId":10,"difen":0,"beishu":0,"playerList":[{"userId":10,"userName":"玩家10","prepare":1,"position":1,"integral":0,"job":"nongmin","cause":null},{"userId":30,"userName":"玩家30","prepare":0,"position":2,"integral":0,"job":"nongmin","cause":null}],"roomProperty":0}}
+	            if(methodName == 'foundRoom' || methodName == 'enterRoom')//创建房间号
+	            {
+	            	let roomObj = jsonObj.room;
+	            	if(roomObj)
+	            	{
+	            	let roomId = roomObj.roomId;
+	            	LocalPlayerInfo.RoomId = roomId;
+	            	let roomNum =  roomObj.roomId ;
+	            	let curPlayerNum = roomObj.playerList;
+	            	// let roomState = roomObj.roomProperty;
+	            		            		//init userinfo
+            		let selfplayer = roomObj.playerList.find((p)=>{return p.userId==LocalPlayerInfo.playerId;});
+            		util.initUserInfo(selfplayer);
+
+	            	util.showRoomInfo(roomObj);//这个函数里有对个人信息的初始化
+
+			    	//当前人数和房间号
+						let person = roomObj.playerList.find((player)=>{return player.prepare==0;});
+						let curPersonNum = roomObj.playerList.length;
+						let roomState =false;
+						if(!person && curPersonNum==3){
+							roomState =true;
+						}
+						    	//当前人数和房间号
+					    console.log('curPersonNum='+curPersonNum);
+				    	$("span[data-custom=RoomNum]").empty().text(roomObj.roomId);
+				    	$("span[data-custom=CurPersonNum]").empty().text(curPersonNum);
+				    	$("td[data-custom=RoomStatus]").empty().append(roomState?"已经准备好":"正在准备");
+
+
+				    	//统计到准备好的人数，如果三个人都准备好了，地主就可以显示开始按钮了
+				    	let posId = LocalPlayerInfo.positionId;
+				    	if(roomState && LocalPlayerInfo.positionId == 1)
+				    	{
+
+						$("li[data-custom=RoomInfo_"+posId+"] div[data-custom=PlayerStatus_"+posId+"]").empty().append('<a href=\"#gameInPage\"><button style=\" background-color:#B90CE8;color:white;  text-shadow: none;\"  class=\"ui-btn ui-btn-inline\" >开始</button></a>');
+				    	}
+	            	}
+
+
+	            }
+	           
+	             else if(methodName=== 'wjzhunbei')//准备
+	            {
+	              	// {"prepare":1,"method":"wjzhunbei","userId":20}
+	            	let uid  = jsonObj.userId;
+
+	            	let playerojb=window.PlayersArray.find(function(arg) {return arg.userId==uid;});
+	            	if(!playerojb)return ;
+	            	let status  = jsonObj.prepare;
+	            	playerojb.prepare=status;
+
+	            	let positionid = playerojb.position;
+	    //         	if(status ==1)
+	    //         	{
+	    //         	 $("div[data-custom=PlayerStatus_"+positionid).empty().text("已准备");
+	    //         	}else {
+
+					//  $("div[data-custom=PlayerStatus_"+positionid).empty().append('<button style=\" background-color: green;color:white;text-shadow: none;\" class="ui-btn ui-btn-inline\" data-custom=readyGame>准备</button>');
+
+					// }
+				let gamePrepare=true;
+				if(!window.PlayersArray || window.PlayersArray.length!=3)
+				{
+					gamePrepare =false;
+				}
+				for(let k=0;k<window.PlayersArray.length;k++)
+				{
+					let p = window.PlayersArray[k];
+					if(!p)continue;
+					if(p.userId==uid)
+					{
+						p.prepare=status;
+						if(status ==1)
+		            	{
+		            	 $("div[data-custom=PlayerStatus_"+positionid).empty().text("已准备");
+		            	}else {
+
+						 $("div[data-custom=PlayerStatus_"+positionid).empty().append('<button style=\" background-color: green;color:white;text-shadow: none;\" class="ui-btn ui-btn-inline\" data-custom=readyGame>准备</button>');
+						}
+					
+					}
+					if(!p.prepare)gamePrepare=false;
+				
+ 
+	            }
+	            console.log("gamePrepare",gamePrepare);
+	            console.log("position=",LocalPlayerInfo);
+				if(gamePrepare &&  LocalPlayerInfo.positionId == 1)
+				{
+					//地主要变成开始
+					 $("div[data-custom=PlayerStatus_1").empty().append('<a href=\"#gameInPage\"><button style=\" background-color: green;color:white;text-shadow: none;\" class="ui-btn ui-btn-inline\"  data-custom=startGame>开始</button></a>');
+				}
+			   }
+	            else if(methodName == 'qiangdizhu')
+	            {
+				// {"method":"qiangdizhu","grade":0}
+
+				document.getElementById("gameInPage").scrollIntoView();
+
+					let grade = jsonObj.grade;
+					let userid = jsonObj.userId;
+					let player = window.PlayersArray.find((obj)=>{return obj.userId == userid});
+
+				 
+
+					console.log("-----抢地主到分数："+player.userName+'\t'+grade);
+	            }else if(methodName == 'quedingdizhu')
+	            {
+	            		// {"dizhu":10,"method":"quedingdizhu","difen":3,"finalPoker":[{"color":3,"num":1},{"color":2,"num":1},{"color":4,"num":1}]}
+	            	//document.getElementById("gameInPage").scrollIntoView();
+	            	// msg={"dizhu":30,"method":"qiangdizhu","difen":2,"finalPoker":[{"color":4,"num":5},{"color":2,"num":4},{"color":3,"num":3}]}
+	            	// {"dizhu":20,"method":"quedingdizhu","difen":3,"finalPoker":[{"color":4,"num":4},{"color":2,"num":2},{"color":3,"num":2}]}
+	            	let lordId = jsonObj.dizhu;
+	            	let difen = jsonObj.difen;
+	            	//更新底分和倍数
+	            	//回填其他的数据，比如三个玩家的信息还有底分和倍数
+					$("span[data-custom=gameRoom_basicTimes]").text("1");
+					$("span[data-custom=gameRoom_basicScore]").text(difen);
+
+        			if(lordId == LocalPlayerInfo.playerId)
+					{ 
+					 LocalPlayerInfo.playerRole = 'dizhu';
+					
+					}
+	            	let basicPokerList=jsonObj.finalPoker;
+	            	$("div[data-custom=gameRoom_dipai]").empty();
+	            	if(basicPokerList)
+	            	{
+	            		for (let basicIndx = basicPokerList.length - 1; basicIndx >= 0; basicIndx--) 
+	            		{
+	            			let b_poker= basicPokerList[basicIndx];
+	            			let srcIndx = b_poker.color+'_'+b_poker.num;
+	            			let imgsrc = pokerImageMap[srcIndx];
+	            			$("div[data-custom=gameRoom_dipai]").append("<img src="+imgsrc+">");
+	            			//如果地主是自己，那么就把地主牌放入到自己的牌中。
+	            			if(lordId == LocalPlayerInfo.playerId)
+							{
+								if(window.PLAYER_CARD_INFO.cardList)
+								{
+									window.PLAYER_CARD_INFO.cardList.push(b_poker);
+								}
+							}
+
+	            		}
+	            		//如果是地主，重新对牌进行整理分析
+						 if(lordId == LocalPlayerInfo.playerId)
+						{ 
+						 // $("#gameInPage_ChaiPai").empty();//初始化
+						 	let pos = LocalPlayerInfo.positionId;
+						 	console.log('地主对position是',pos);
+		                    $("td[data-custom=gameRoom_cardCounter_"+pos+"]").text('20');
+							util.showGameInPanel(window.PLAYER_CARD_INFO.cardList);
+							//第一手牌是自己
+							window.isMySeq = true;
+							$("div[data-custom=MyseqTip]").empty().text("你是地主，你先来一把");
+						
+						}
+		            	
+
+	            	}
+	            	//确定地主之后，隐藏掉抢地主的按钮
+	            	// $("tr[data-custom=MyseqTip]").attr('hidden','false');
+	            	$("tr[data-custom=qiangdizhu]").attr('hidden','hidden');
+
+	            }else if( methodName == 'chupai')
+	            {
+	            	$("a[data-custom=gameInPage_point]").click();
+	            	// 从服务端收到的数据:{"beishu":0,"cards":"4-1","cardInfo":[{"cardNum":17,"position":3,"userId":20},{"cardNum":19,"position":1,"userId":10},{"cardNum":17,"position":2,"userId":30}],"method":"chupai","integral":0,"userId":10}
+	            	//  
+					PlayerReadyOutCardsArray=[];
+				   
+
+	            	let uid = jsonObj.userId; 	//表示谁出的牌
+	            	let userInfo = jsonObj.cardInfo;
+	            	let beishu = jsonObj.beishu;
+	            	let meili_value= jsonObj.integral;
+	            	if(userInfo)
+	            	{
+	            		 util.updatePlayerCardInfo(userInfo);
+	            	}
+				    // util.updatePlayerCardInfo(cardInfo);
+					util.updateGameInScore(null,beishu,meili_value); //times defalt =1
+		        	 
+		           //记录上家出的牌
+		           // let cardslist = jsonObj.cards;
+		           if(uid ==window.PrePlayer.userId)
+		           {
+		           	//如果上家出了牌，那么就改自己出牌了
+		           	$("div[data-custom=MyseqTip]").empty().text("该我了！");
+			           	window.isMySeq = true;
+
+		             if(jsonObj.cards && jsonObj.cards.length!=0)
+		          	    window.PrePlayer.playCards=jsonObj.cards;
+		       	     else //上家没有出牌就是空
+						window.PrePlayer.playCards=[];
+		           }else {
+		           		window.isMySeq = false;
+		           		$("div[data-custom=MyseqTip]").empty().text("该别人了");
+		           }
+
+						 
+
+	            }
+	            else if(methodName == 'jinruGame' )//进入游戏指令的，这个指令里发牌
+	            {
+	        // 从服务端收到的数据:{cardInfo:[{userid:xx,position:xx,cardNum:xx}{userid:xx,position:xx,cardNum:xx}{userid:xx,position:xx,cardNum:xx}],"method":"jinruGame","curPoker":[{"color":2,"num":13},{"color":2,"num":12},{"color":1,"num":11},{"color":1,"num":10},{"color":3,"num":10},{"color":3,"num":9},{"color":2,"num":7},{"color":3,"num":7},{"color":4,"num":7},{"color":1,"num":6},{"color":3,"num":5},{"color":2,"num":5},{"color":2,"num":4},{"color":4,"num":4},{"color":1,"num":3},{"color":1,"num":2},{"color":3,"num":1}],"meilizhi":0,"defen":1}
+	      
+		        	    // let jsonObj =	JSON.parse(jsonInfo);
+		        	   // $("").attr('href','#gameInPage');
+		        	    //首先应该跳转到游戏的界面
+		        	    $("a[data-custom=gameInPage_point]").click();
+		        		let meili_value =   jsonObj.meilizhi;
+		        		let basicScore = jsonObj.difen; //底分
+	 	            	//三个玩家的牌的信息
+	            		let cardInfo = jsonObj.cardInfo;
+						let basicTimes = 1;
+
+
+	            		let pokerList = jsonObj.curPoker;
+		            	$("#gameInPage_ChaiPai").empty();//初始化
+		            	if(pokerList)
+		            	{
+		            		// let roomId = roomObj.roomId;
+		            		// let basicTimes = roomObj.beishu;//倍数
+		            		// let pokerList = curPoker;
+						    util.updatePlayerCardInfo(cardInfo);
+						    util.updateGameInScore(basicScore,1); //times defalt =1
+							util.showGameInPanel(pokerList);
+		            	}
+		            	//确定上家
+		            	if(LocalPlayerInfo.positionId == 1)
+		            	{
+		            		//1号的上家是三号
+		            		window.PrePlayer = PlayersArray.find((p)=>{return p.position == 3; });
+		            	}else if(LocalPlayerInfo.positionId == 2)
+		            	{
+		            	   //2号的上家是1号
+		            		window.PrePlayer = PlayersArray.find((p)=>{return p.position == 1; });
+		            	}else if(LocalPlayerInfo.positionId ==3)
+		            	 {
+		            	   //2号的上家是1号
+		            		window.PrePlayer = PlayersArray.find((p)=>{return p.position == 2; });
+		            	}
+		            	console.log("我的上家：",window.PrePlayer );
+		            	 
+		            	
+
+	             
+	            }
+	            else if(methodName == 'reconneted')
+	            {
+	            	console.log('reconnect is recieve....');
+	            	// 从服务端收到的数据:{"GameStatus":"GameReady","beishu":0,"method":"reconneted","players":[{"prepare":1,"integral":0,"position":1,"userid":10},null,null],"difen":0,"roomId":10}
+	            	// method:reconneted,GameStatus:GameReady/GameIn, players:[{userid:xx,position:xx,cardnum:xx,prepare:xx,integral:xx},{userid:xx,position:xx,cardnum:xx,integral:xx},{userid:xx,position:xx,cardnum:xx,integral:xx}], playerPokerList:[{color:xx,num:xx},{color:xx,num:xx},{color:xx,num:xx}]
+	            	let status = jsonObj.GameStatus;//GameReady/GameIn
+	            	if(status && status == 'GameReady')//准备状态，还没有进入到游戏中
+	            	{
+	            		//获取玩家的信
+	            		$("a[data-custom=MakeGroupPage_point]").click();
+	            		let playerList  = jsonObj.players;
+	            		var roomObj = {};
+	            		roomObj.roomId=jsonObj.roomId;
+	            		roomObj.playerList =jsonObj.players;
+	            		roomObj.roomProperty = '';
+	            		//init userinfo
+	            		let selfplayer = roomObj.playerList.find((p)=>{return p.userId==LocalPlayerInfo.playerId;});
+	            		util.initUserInfo(selfplayer);
+	            		//room info
+						util.showRoomInfo(roomObj);
+						let person = roomObj.playerList.find((player)=>{return player.prepare==0;});
+						let curPersonNum = roomObj.playerList.length;
+						let roomState =false;
+						if(!person && curPersonNum==3){
+							roomState =true;
+						}
+						    	//当前人数和房间号
+						    	console.log('curPersonNum='+curPersonNum);
+				    	$("span[data-custom=RoomNum]").empty().text(roomObj.roomId);
+				    	$("span[data-custom=CurPersonNum]").empty().text(curPersonNum);
+				    	$("td[data-custom=RoomStatus]").empty().append(roomState?"已经准备好":"正在准备");
+				    		//统计到准备好的人数，如果三个人都准备好了，地主就可以显示开始按钮了
+				    	let posId = LocalPlayerInfo.positionId;
+				    	if(roomState && posId == 1)
+				    	{
+
+						// $("li[data-custom=RoomInfo_"+posId+"] div[data-custom=PlayerStatus_"+posId+"]").empty().append('<a href=\"#gameInPage\"><button style=\" background-color:#B90CE8;color:white;  text-shadow: none;\"  class=\"ui-btn ui-btn-inline\" >开始</button></a>');
+						 $("div[data-custom=PlayerStatus_1").empty().append('<a href=\"#gameInPage\"><button style=\" background-color: green;color:white;text-shadow: none;\" class="ui-btn ui-btn-inline\" data-custom=startGame>开始</button></a>');
+				    	}
+
+	            	  }else if(status && status == 'GameIn')//已经进入到游戏中
+		              {
+ 							//首先应该跳转到游戏的界面
+		        	    $("a[data-custom=gameInPage_point]").click();
+		        		// let meili_value =   jsonObj.meilizhi;
+		        		let basicScore = jsonObj.difen; //底分
+	 	            	//三个玩家的牌的信息
+	            		let cardInfo = jsonObj.players;
+	            		playerObjct.cardNum
+						let basicTimes = 1;
+
+
+	            		let pokerList = jsonObj.playerPokerList;
+		            	$("#gameInPage_ChaiPai").empty();//初始化
+		            	if(pokerList)
+		            	{
+		            		// let roomId = roomObj.roomId;
+		            		// let basicTimes = roomObj.beishu;//倍数
+		            		// let pokerList = curPoker;
+						    util.updatePlayerCardInfo(cardInfo);
+						    util.updateGameInScore(basicScore,1); //times defalt =1
+							util.showGameInPanel(pokerList);
+		            	}
+
+		              }
+	            }else if(methodName == 'playerQuit')
+	            {
+	            	//method:playerQuit,quitPlayer:{userId:xx,position:xx,cause:xx}
+
+
+
+
+	            }else if(methodName == 'OverInfomation')//结算
+	            {
+	            	//state :表示是胜利还是失败。
+	            	// costValue:增加或者减少的魅力值，胜利就是增加，失败就是减少
+					// portraitImgId 头像id
+					// 炸弹，春天，火箭次数
+	            	 // {method:OverInformation,player:[userId:xx,position:xx,state:win/loss,costValue:xx],springTime:xx,rocketTimes:xx,BombTimes:xx,portraitImgId:xx}
+ 
+
+
+
+
+	            }
+
+
+	        }
+	    });
+
+// ==========================================================================
+ 
+	 	    return Socket1;
+	 }
+
+
+//==================================================================================
+
+ 
+	$(document).ready(function(){
+		//初始化socket
+		var mysocket = createsocket();
+		
+
+
+		$("#flip-7").change(function(){
+			 if($(this).val() == 'off'){
+			 	$("#gameInPage_BuChaiPai").hide();
+			 	$("#gameInPage_ChaiPai").show();
+	// 		 	var gameModel = {
+	// 	AutoSplitCardModel:1,
+	// 	NonSplitCardModel:2,
+	// }
+			 	window.curGameUsingModel = gameModel.AutoSplitCardModel;
+			 	util.showPokerViewByModel(window.curGameUsingModel,window.PLAYER_CARD_INFO);
+			 }else{
+			 	$("#gameInPage_BuChaiPai").show();
+			 	$("#gameInPage_ChaiPai").hide();
+			 	window.curGameUsingModel = gameModel.NonSplitCardModel;
+			 	util.showPokerViewByModel(window.curGameUsingModel,window.PLAYER_CARD_INFO);
+			 }
+		   
+		});
+		$("#flip-7").find("option[value='off']").attr("selected",true);
+		$("img[data-custom=createRoomBtn]").click(function(){
+    // $("#qunit").hide();
+     		console.log("点击了进入房间");
+		  	mysocket.send("{\"method\":\"foundRoom\"}");
+
+		  });
+
+		// //点击  认证 按钮的【被邀请的人，点击认证】
+		$("button[data-custom=authBtn]").click(function(event) {
+			/* Act on the event */
+		let msgAuth = {};
+		// {"method":"auth","id":"10","name":"zhangsan"} 
+		msgAuth.method = "auth";
+		msgAuth.userId = LocalPlayerInfo.playerId ;
+		console.log("userid =",LocalPlayerInfo.playerId );
+ 
+ 		mysocket.send(JSON.stringify(msgAuth))
+		});
+	 $(document).on("click",'button[data-custom=readyGame]',function(){
+		//点击准备 按钮
+		// $("button[data-custom=readyGame]").click(function(event) {
+			/* Act on the event */
+			// {"method":"wjzhunbei","prepare":1}
+
+			let msgReady = {};
+			msgReady.method="wjzhunbei";
+			msgReady.prepare =1;
+			mysocket.send(JSON.stringify(msgReady));
+		});
+		//解散房间
+
+		// $('a#toMain').trigger('click') ;
+		$("img[data-custom=releaseRoom]").click(function() {
+			// body...
+			$("a[data-custom=ChooseRoomPage_point]").click();
+			let msgObj = {};
+			msgObj.method = "releaseRoom"; 
+			mysocket.send(JSON.stringify(msgObj));
+			// $("#ChooseRoomPage").
+		});
+
+
+//非房主，先认证
+	$("button[data-custom=joinRoomAuth]").click(function(event) {
+			/* Act on the event */
+			let obj = {};
+			obj.method="auth";
+			let uid=$("input[data-custom=joinAuthUserID]").val();
+			obj.userId=uid?uid:30;
+			LocalPlayerInfo.playerId = obj.userId;
+			//obj.roomId="10";
+			mysocket.send(JSON.stringify(obj));
+		});
+		//非房主，进入到房间
+		$("button[data-custom=joinRoomBtn]").click(function(event) {
+			/* Act on the event */
+			let obj = {};
+			obj.method="enterRoom";
+			// obj.userId="30";
+// LocalPlayerInfo.PlayerId = obj.userId;
+			obj.roomId="10";
+			mysocket.send(JSON.stringify(obj));
+			$("a[data-custom=MakeGroupPage_point]").click();
+		});
+
+		$("button[data-custom^=lord_score_]").click(function(event) {
+			/* Act on the event */
+			// {"method":"qiangdizhu","grade":3}
+			let score=$(this).attr("data-custom-score");
+			let obj ={};
+			obj.method="qiangdizhu";//抢地主
+			// obj.id=LocalPlayerInfo.playerId;
+			// obj.name="wangwu";
+			// obj.roomid="10";
+			console.log('....fenshu =',score);
+			obj.grade=parseInt(score) ;
+			mysocket.send(JSON.stringify(obj));
+		});
+		//checkbox选中某个牌，回填到数组中
+		//
+		$(document).on("click",'.NonSplitCard_checkbox',function(){
+			/* Act on the event */
+			// 先判断是否是到自己的出牌顺序
+			if(!window.isMySeq)return;
+
+			let customAttri = $(this).parent().parent().attr("data-custom");
+	 		let cardcolor = customAttri.split("_")[0];
+	 		let cardNum =  customAttri.split("_")[1];
+	 		console.log(""+customAttri);
+	 		let cardObj =window.PLAYER_CARD_INFO.cardList.find((element)=>{return element.color==cardcolor && element.num == cardNum ;});
+			// {"method":"chupai","id":”10”,”roomid”:”10”,”cards”:”2-1”}
+	 		// 
+	 		let status = $(this).attr("data-custom-status");
+	 		if(status == 0)//如果当前是0，表示为选中，点击后是选中 那么就应该把图标改为选中
+	 		{
+	 			$(this).attr("src","./images/checkboxBtn.png");
+	 			$(this).attr("data-custom-status",1);
+ 
+		 		if(cardObj)
+		 		{
+	 
+					PlayerReadyOutCardsArray.push(cardObj);
+
+		 		}
+	 		}else {
+				$(this).attr("src","./images/checkboxBtn2.png");
+				$(this).attr("data-custom-status",0);
+				let outCard = PlayerReadyOutCardsArray.find((card)=>{return card.color==cardObj.color&&card.num==cardObj.num;});
+				if(outCard)
+				{
+					util.removeObjWithArr(PlayerReadyOutCardsArray,outCard);
+				}
+				
+	 		}
+	 		
+	 		//显示等待出的牌
+	 		let str ='';
+	 		for(let s in PlayerReadyOutCardsArray)
+	 		{
+	 			let co = PlayerReadyOutCardsArray[s];
+	 			str+= ''+util.mapPokerByIdVal(co.val)+'&nbsp;';
+	 		}
+	 		$("td[data-custom=ReadyOutCards]").empty().append(str)
+	 		
+	 		//{color:xx,num:xx}{color:xx,num:xx}...
+
+
+		});
+
+
+		// 拆牌  的出牌的消息消息    注意使用on事件
+		$(document).on("click",'.splitCard_outCardBtn',function(){
+			/* Act on the event */
+			// {"method":"chupai","id":”10”,”roomid”:”10”,”cards”:”2-1”}
+// {“method”:”chupai”,”cards”:[{“color”:xx,”num”:xx},{color:xx,num:xx}]}
+			// 先判断是否是到自己的出牌顺序
+			if(!window.isMySeq)return;
+			// let outCards=JSON.stringify(PlayerReadyOutCardsArray);
+			PlayerReadyOutCardsArray.splice(0,PlayerReadyOutCardsArray.length); //clear
+			let attr_value=$(this).parent().prev().attr("data-custom");
+			if(!attr_value)return;
+			let cardsType = attr_value.split("_")[0];
+			let listIndex = attr_value.split("_")[1];
+			let list = Card_TYPE_MAP[cardsType];
+			let readycardlist = list[listIndex];
+			console.log("cardlist = ",readycardlist);
+			PlayerReadyOutCardsArray=readycardlist.cardList.slice(0)
+
+//首先判定出牌是否合理
+			let result ;
+			let prePlayerCards = PrePlayer.playCards;
+			if(!prePlayerCards || prePlayerCards.length == 0)
+			{
+				//上家没有出牌
+				result = true;
+			} else {
+
+				//判定自己的牌型
+				let selfReadyCard = PlayerReadyOutCardsArray.slice(0);
+				result=util.judgePoker(selfReadyCard,prePlayerCards);
+				
+			}
+			if(result)
+				{
+					let msgObj = {};
+					msgObj.method = "chupai";
+					msgObj.cards = [];
+		 
+					for(let oi=0;oi<PlayerReadyOutCardsArray.length;oi++)
+					{
+						let co = PlayerReadyOutCardsArray[oi];
+						if(co)
+						{
+							msgObj.cards.push(co);
+						}
+			 
+					}
+					if(PlayerReadyOutCardsArray.length==0)
+					{
+						console.log("cards is null ");
+						msgObj.cards=null;
+					}
+					// msgObj.cards =cardstr;
+					mysocket.send(JSON.stringify(msgObj));
+
+					//本地的牌型变化：
+						for(let outcardIndex in PlayerReadyOutCardsArray )
+						{
+							let outcardobj = PlayerReadyOutCardsArray[outcardIndex];
+							console.log('---outcardobj=',outcardobj);
+							console.log('---window.PLAYER_CARD_INFO.cardList=',window.PLAYER_CARD_INFO.cardList);
+							let outcard =window.PLAYER_CARD_INFO.cardList.find((e)=>{return outcardobj.color == e.color && outcardobj.num == e.num;  });
+							if(outcard)
+							{
+								util.removeObjWithArr(window.PLAYER_CARD_INFO.cardList,outcard);
+							}
+							
+						}
+					//window.PLAYER_CARD_INFO.cardList保存了最新的扑克信息
+					util.showPokerViewByModel(window.curGameUsingModel,window.PLAYER_CARD_INFO);
+					// clear
+					// PlayerReadyOutCardsArray.slice(0,PlayerReadyOutCardsArray.length);
+					// PlayerReadyOutCardsArray=[];
+					 // console.log("已经清空了待出牌 PlayerReadyOutCardsArray=",PlayerReadyOutCardsArray);
+
+				}else {
+					$("div[data-custom=MyseqTip]").empty().text("你这牌型不对啊");
+				}
+				PlayerReadyOutCardsArray=[];
+				console.log("已经清空了待出牌 PlayerReadyOutCardsArray=",PlayerReadyOutCardsArray);
+
+
+
+
+			// let msgObj = {};
+			// msgObj.method = "chupai";
+			// msgObj.cards = [];
+			// // msgObj.cards = '';
+			// let cardstr = '';
+ 		// 	for(let oi=0;oi<PlayerReadyOutCardsArray.length;oi++)
+			// {
+			// 	let co = PlayerReadyOutCardsArray[oi];
+			// 	if(co)
+			// 	{
+			// 		msgObj.cards.push(co);
+			// 		// cardstr +=co.color+"-"+co.num;
+			// 	}
+			// 	// if(oi!=PlayerReadyOutCardsArray.length-1)
+			// 	// 	cardstr+="_";
+
+			// }
+		 // 	console.log("===",msgObj);
+		 // 	// msgObj.cards =cardstr;
+			// mysocket.send(JSON.stringify(msgObj));	
+
+		});
+		//出牌的消息 不拆牌的消息
+		$("img[data-custom=OutCardsBtn]").click(function(event) {
+			/* Act on the event */
+			// {"method":"chupai","id":”10”,”roomid”:”10”,”cards”:”2-1”}
+			// let outCards=PlayerOutCardsArray.join(",");
+			// {“method”:”chupai”,”cards”:[{“color”:xx,”num”:xx},{color:xx,num:xx}]}
+ 
+			//首先判定出牌是否合理
+			$("td[data-custom=ReadyOutCards]").empty();
+			let prePlayerCards = PrePlayer.playCards;
+			let result;
+			if(!prePlayerCards || prePlayerCards.length == 0)
+			{
+				//上家没有出牌,肯定是适合，随意的牌型
+					result=true;
+			} else {
+
+				//判定自己的牌型
+				let selfReadyCard = PlayerReadyOutCardsArray.slice(0);
+				result=util.judgePoker(selfReadyCard,prePlayerCards);
+				
+			}
+		if(result)
+		{
+			let msgObj = {};
+			msgObj.method = "chupai";
+			msgObj.cards = [];
+			// msgObj.cards = '';
+			// let cardstr = '';
+			for(let oi=0;oi<PlayerReadyOutCardsArray.length;oi++)
+			{
+				let co = PlayerReadyOutCardsArray[oi];
+				if(co)
+				{
+					msgObj.cards.push(co);
+				}
+ 
+			}
+			if(PlayerReadyOutCardsArray.length==0)
+			{
+				console.log("cards is null ");
+				msgObj.cards=null;
+			}
+			// msgObj.cards =cardstr;
+			mysocket.send(JSON.stringify(msgObj));
+
+			//本地的牌型变化：
+				for(let outcardIndex in PlayerReadyOutCardsArray )
+				{
+					let outcardobj = PlayerReadyOutCardsArray[outcardIndex];
+					console.log('---outcardobj=',outcardobj);
+					console.log('---window.PLAYER_CARD_INFO.cardList=',window.PLAYER_CARD_INFO.cardList);
+
+					if(outcardobj && window.PLAYER_CARD_INFO.cardList && window.PLAYER_CARD_INFO.cardList.length>0)
+					{
+						let outcard =window.PLAYER_CARD_INFO.cardList.find((e)=>{return outcardobj.color == e.color && outcardobj.num == e.num;  });
+					    util.removeObjWithArr(window.PLAYER_CARD_INFO.cardList,outcard);//本函数不会返回值
+					}
+					
+				}
+			//window.PLAYER_CARD_INFO.cardList保存了最新的扑克信息
+			util.showPokerViewByModel(window.curGameUsingModel,window.PLAYER_CARD_INFO);
+			// clear
+			// PlayerReadyOutCardsArray.slice(0,PlayerReadyOutCardsArray.length);
+			// PlayerReadyOutCardsArray=[];
+			 // console.log("已经清空了待出牌 PlayerReadyOutCardsArray=",PlayerReadyOutCardsArray);
+
+		}else {
+			$("div[data-custom=MyseqTip]").empty().text("牌型不对啊兄dei");
+		}
+		PlayerReadyOutCardsArray=[];
+		console.log("已经清空了待出牌 PlayerReadyOutCardsArray=",PlayerReadyOutCardsArray);
+
+			
+
+		});
+// jinruGame
+// 房主开始游戏   注意使用on事件
+		$(document).on("click",'button[data-custom=startGame]',function(){
+			/* Act on the event */
+			// {"method":"chupai","id":”10”,”roomid”:”10”,”cards”:”2-1”}
+
+			// let outCards=JSON.stringify(PlayerOutCardsArray);
+			let msgObj = {};
+			msgObj.method = "jinruGame";
+			 
+			mysocket.send(JSON.stringify(msgObj));
+
+		});
+//解散房间
+	$("img[data-custom=exitGameBtn]").click(function (argument) {
+		// body...
+		console.log('data-custom=exitGameBtn');
+	});
+
+
+//不出牌
+$("img[data-custom=quitThisTime]").click(function(){
+
+	// $("div[data-custom=MyseqTip]").
+	// window.PlayerReadyOutCardsArray.splice(0,PlayerReadyOutCardsArray.length);
+	window.PlayerReadyOutCardsArray=[];
+	console.log("已经清空了待出牌 PlayerReadyOutCardsArray=",PlayerReadyOutCardsArray);
+	let msgObj = {};
+	msgObj.method = "chupai";
+	msgObj.cards = [];
+	mysocket.send(JSON.stringify(msgObj));	
+});
+
+
+
+// $("a[data-custom=JIE_SUAN_PAGE_point]").click();
+$("button[data-custom=jiesuanBtn]").click(function(event) {
+	/* Act on the event */
+	let jquobj = $("a[data-custom=JIE_SUAN_PAGE_point]");
+	console.log(jquobj.attr("href"));
+	// $("a[data-custom=JIE_SUAN_PAGE_point]").click();
+	$("a[data-custom=gameInPage_point]").click();
+});
+
+
+	});
+
+
+
+
+
+		
+
+
+	</script>
+</head>
+
+<body>
+<!--这里有两个音频的audio，一个是背景音乐，另一个是音效播放-->
+<audio id="backgroud_music" src="./music/doudizhuBGM.mp3" autoplay=true ></audio>
+<audio id="backgroud_effect"></audio>
+<!--       <audio controls="controls">
+            <source src="song.ogg" type="audio/ogg">
+            <source src="song.m4a" type="audio/mpeg">
+            <source src="song.mp3" type="audio/mpeg">
+                你的浏览器不支持html5的audio标签
+        </audio> -->
+
+
+<!--第1页 选择房间-->
+<a href="#ChooseRoomPage" hidden="hidden" data-custom=ChooseRoomPage_point></a>
+<!-- Start of second page -->
+<div data-role="page" id="ChooseRoomPage">
+
+	<div data-role="header">
+		<h1>选择房间</h1>
+	</div><!-- /header -->
+
+	<div role="main" class="ui-content" >
+     <ul  data-role="listview" >
+     	<li>
+     	  <button data-custom="jiesuanBtn"> 结算</button> 
+    	<button data-custom=authBtn hidden="hidden">auth</button>
+     		<a ><button data-custom="joinRoomBtn">被邀请的人进入房主的房间</button></a>
+     		
+     		
+     	</li>
+		 <li >
+		 	<div class ="DIVchooseRoom"  style="background-image:url(./images/chuji_section_bg.png);">
+		 	 	 <div  class="chooseRoomDivText" >
+			 	    <p style="font-size:.9em;" >魅力值1分</p>
+				    <h2 style="font-size:2em;">初级房间</h2>
+
+				    <a href="#MakeGroupPage"><img src="./images/dclickbtn.png"  data-custom="createRoomBtn"></a>
+			    </div>
+			    
+		 	</div>
+
+			
+		 </li>
+ 		 <li >
+		 	<div class ="DIVchooseRoom"  style="background-image:url(./images/zhongji_section_bg.png);">
+		 	 	 <div  class="chooseRoomDivText" >
+			 	    <p  style="font-size:.9em;">魅力值2分</p>
+				    <h2  style="font-size:2em;">2级房间</h2>
+				    <a href="#MakeGroupPage"><img src="./images/dclickbtn.png" style="cursor:hand"  ></a>
+			    </div>
+			    
+		 	</div>
+
+			
+		 </li>
+		 <li >
+		 	<div class ="DIVchooseRoom"  style="background-image:url(./images/gaoji_section_bg.png);">
+		 	 	 <div  class="chooseRoomDivText" >
+			 	    <p  style="font-size:.9em;">魅力值3分</p>
+				    <h2  style="font-size:2em;">3级房间</h2>
+				    <a href="#MakeGroupPage"><img   src="./images/dclickbtn.png" style="cursor:hand"  ></a>
+			    </div>
+			    
+		 	</div>
+
+			
+		 </li> <li >
+		 	<div class ="DIVchooseRoom"  style="background-image:url(./images/chaoji_section_bg.png);">
+		 	 	 <div  class="chooseRoomDivText" >
+			 	    <p  style="font-size:.9em;">魅力值3分</p>
+				    <h2  style="font-size:2em;">3级房间</h2>
+				    <a href="#MakeGroupPage"><img   src="./images/dclickbtn.png" style="cursor:hand"  ></a>
+			    </div>
+			    
+		 	</div>
+
+			
+		 </li>	
+		</ul>
+
+	 
+	</div><!-- /content -->
+
+	
+</div><!-- /page -->
+
+<!--=======================================第2页 组队=======================================-->
+<a href="#MakeGroupPage" hidden="hidden" data-custom=MakeGroupPage_point></a>
+	 <!-- Start of first page -->
+<div data-role="page" id="MakeGroupPage">
+
+	<div data-role="header" style="background-color:#B90CE8">
+		<p> 
+		<table class="word_style" style="width: 100%"><tr>
+			<td><a    ><img data-custom=releaseRoom src="./images/exitButton.png"> <span>back&lt&nbsp;&nbsp;&nbsp;</span></a></td>
+			<td  >房间号：<span data-custom="RoomNum"> </span></td>
+			<td>当前人数：<span data-custom="CurPersonNum"> </span></td>
+			<td data-custom="RoomStatus"></td>
+		</tr></table></p>
+	</div><!-- /header -->
+
+	<div role="main" class="ui-content">
+
+<ul data-role="listview"  data-inset="true">
+    <li data-custom="RoomInfo_1">
+    	 <img src="./images/men1.png">
+    	<div  style="display: inline-block;width: 60%">        
+    
+	    <h2 >1号位置</h2>
+	    <p data-custom="position_name_1">房主</p>
+
+	   </div>
+		<div style="display: inline-flex;" data-custom="PlayerStatus_1"> 
+			<!--<a href="#gameInPage">
+			<button style=" background-color:#B90CE8;color:white;  text-shadow: none;"  class="ui-btn ui-btn-inline" >开始</button></a>
+			-->
+				
+			</div>		 
+	 </li>
+    <li data-custom="RoomInfo_2"> 
+     <img src="./images/men2.png">
+     <div  style="display: inline-block;width: 60%">   
+    <h2>2号位置</h2>
+    <p data-custom="position_name_2">玩家</p> 
+   </div>
+   <div style="display: inline-flex;" data-custom="PlayerStatus_2"></div>
+
+    </li>
+    <li data-custom="RoomInfo_3"> 
+      <img src="./images/men3.png">
+	    <div  style="display: inline-block;width: 60%">   
+	    <h2>3号位置</h2>
+	    <p data-custom="position_name_3">玩家</p> 
+		</div>
+	    <div style="display: inline-flex;" data-custom="PlayerStatus_3">
+	    	<!--<button style=" background-color: green;color:white;text-shadow: none;  " class="ui-btn ui-btn-inline">准备</button>-->
+	    		
+	    	</div>
+
+    </li>
+</ul>
+		 
+		
+	</div><!-- /content -->
+
+	
+</div><!-- /page -->
+
+
+
+<!--------------------------------------------第3页  游戏房间 ---------------------------------------------->
+
+<a href="#gameInPage" hidden="hidden" data-custom="gameInPage_point"></a>
+<!-- Start of   page -->
+<div data-role="page" id="gameInPage" style="background-image: url(./images/chuji_beijingtu.png);">
+
+	<div data-role="header" style="background-color:transparent;border: 0;height: auto;">
+ 
+ <table border="0" style="width: 100%;padding-top: 5%;">
+  <tr>
+    <th><a  ><img data-custom=exitGameBtn src="./images/exitButton.png"></a></th>
+    <th style="height: 100%;display:inline-flex; padding-left: 10%;white-space: normal;">
+    		 <div data-custom=gameRoom_dipai>
+				<img src="./images/cards/heitao2.png">
+				<img src="./images/cards/heitao3.png">
+				<img src="./images/cards/heitao4.png">
+				
+			</div></th>
+    <th style="display: inline-block;height: 100%;" class="word_style"> 
+    	<p style="margin:0">底分：<span data-custom=gameRoom_basicScore>1</span></p>
+    	<p style="margin: 0;">倍速：<span data-custom=gameRoom_basicTimes>1</span></p>
+    	</th>
+    <th>
+    	<div data-custom=MyseqTip> ==</div>
+    	<div style="background-image:url(./images/baise_bg.png);display: inline-block;width: auto;height: 100%">
+    	<img src="./images/heart.png"><span data-custom=meili_value>50000</span></div>
+    </th>
+  </tr>
+  <tr data-custom=qiangdizhu><th>抢地主</th><th><button data-custom="lord_score_1" data-custom-score="1">1分</button></th><th><button data-custom-score="2" data-custom="lord_score_2">2分
+  </button></th><th><button data-custom="lord_score_3" data-custom-score="3">3分</button></th></tr>
+    
+</table>
+ 
+ 
+		
+	</div><!-- /header
+	 
+		 -->
+
+<div role="main" class="ui-content"  >
+	<!--  拆牌的部分，需要配合按钮来和不拆牌的ul 来切换-->
+	 <ul style="padding: 0;height: 250px"  id="gameInPage_ChaiPai" class="word_style_big">
+	 	<li>
+			<table  style="width: 100%;">
+				<tr>
+				<td style="width: 80%" data-custom=""></td>
+				<td><a ><img src="./images/chupaiBtn.png"></a></td>
+				</tr>
+			</table>
+		</li><li>
+			<table   style="width: 100%;">
+				<tr>
+				<td style="width: 80%"></td>
+				<td><a ><img src="./images/chupaiBtn.png"></a></td>
+				</tr>
+			</table>
+		</li><li>
+			<table   style="width: 100%;">
+				<tr>
+				<td style="width: 80%"></td>
+				<td><a><img src="./images/chupaiBtn.png"></a></td>
+				</tr>
+			</table>
+		</li><li>
+			<table   style="width: 100%;">
+				<tr>
+				<td style="width: 80%"></td>
+				<td><a ><img src="./images/chupaiBtn.png"></a></td>
+				</tr>
+			</table>
+		</li>
+
+
+		
+
+	</ul> 
+<div id="gameInPage_BuChaiPai" hidden="hidden" >
+	<table data-custom=poker_buchaipai class="word_style_big" style="height: 250px;padding: 0;width: 100%">
+    </table>
+	<ul style="padding: 0" class="word_style_big">
+			<li>
+				<table   style="width: 100%;" class="table_word_style">
+					<tr>
+					<td style="width: 15%">出牌：</td>
+					<td style="width: 70%" data-custom="ReadyOutCards"></td>
+					<td><a ><img data-custom="OutCardsBtn" src="./images/chupaiBtn.png"></a></td>
+					</tr>
+				</table>
+		    </li>
+  		 </ul>
+</div>
+ 
+ 
+
+
+
+
+ <!-- 人物信息-->
+   <ul style="padding: 0;" class="word_style">
+    <li>
+    	<!--不出牌-->
+			<table   style="width: 100%;">
+				<tr>
+				<td style="width: 35%"> </td>
+				<td><a  ><img data-custom=quitThisTime src="./images/buchupaiBtn.png"></a>
+					<a href="#">重新播放牌桌出牌</a></td>
+				<td style="width: 35%"> </td>
+				</tr>
+			</table>
+		</li>
+		<!--牌桌的人物-->
+   	 <li>
+			<table  class="table_word_style">
+		 
+				<tr>
+			
+				<td style="width: 30% ;padding: 0"> 
+					<table><tr>
+					<th rowspan="2"><img src="./images/women2.png" height="58" width="58"></th>
+					<td > <img src="./images/dizhu.png"></td>
+					</tr>
+					<tr>
+					<td class="renwu_paishu" data-custom=gameRoom_cardCounter_1>牌数13</td>
+					</tr>
+					</table> 
+				</td>
+			
+				<td style="width: 30%">			
+				 <table><tr>
+					<th rowspan="2"><img src="./images/women1.png" height="58" width="58"></th>
+					<td><img src="./images/nongmin.png" ></td>
+					</tr>
+					<tr>
+					<td class="renwu_paishu" data-custom=gameRoom_cardCounter_2>牌数13</td>
+					</tr>
+					</table> </td>
+				<td style="width: 30%">
+					<table><tr>
+					<th rowspan="2"><img src="./images/women3.png" height="58" width="58"></th>
+					<td><img src="./images/nongmin.png" ></td>
+					</tr>
+					<tr>
+					<td class="renwu_paishu" data-custom=gameRoom_cardCounter_3>牌数17</td>
+					</tr>
+					</table> 
+				</td>
+				
+				</tr>
+			</table>
+		</li>
+
+		<li>
+			<table  style="width: 100%;">
+				<tr>
+				<td style="width: 80%">是否关闭自动拆牌</td>
+				<td><select name="flip-7" id="flip-7" data-role="slider" data-mini="true">
+			        <option value="off">Off</option>
+			        <option value="on">On</option>
+			    </select></td>
+				</tr>
+			</table>
+		</li>
+   </ul>
+
+
+   <!-- 不出牌-->
+
+</div><!-- /page -->
+
+
+
+
+<!--=======================================第4页JIE_SUAN_PAGE 
+	<a href="#gameInPage" hidden="hidden" data-custom="gameInPage_point"></a>=======================================-->
+<a href="#OverInfo" hidden="hidden" data-custom=JIE_SUAN_PAGE_point></a>
+	 <!-- Start of first page -->
+<div data-role="page" id="OverInfo" style="background-image:url(./images/chuji_beijingtu.png);">
+
+	<div data-role="header" style="background-color:#B90CE8">
+		<p> 123
+		</p>
+	</div><!-- /header -->
+
+	<div role="main" class="ui-content">
+
+	<ul data-role="listview"  data-inset="true">
+     <li>&nbsp;</li>
+	 <li><img src="./images/logoWin.png"></li>
+	 <li><table><tr>猪小妹<th></th>+600<th></th><th>胜利</th></tr></table></li>
+	 <li><table><tr>猪2妹<th></th>-300<th></th><th>失败</th></tr></table></li>
+	 <li><table><tr>猪3妹<th></th>-300<th></th><th>失败</th></tr></table></li>
+	 <li><table><tr>炸弹：0<th></th>火箭：0<th></th><th>春天：0</th></tr></table></li>
+	</ul>
+  		
+	</div><!-- /content -->
+
+	
+</div><!-- /page -->
+</body>
+</html>

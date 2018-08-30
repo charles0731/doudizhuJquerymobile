@@ -1,0 +1,69 @@
+
+#ChooseRoomPage{
+	
+}
+
+.DIVchooseRoom{
+		position:relative;
+	
+	  background-repeat:no-repeat;
+	  list-style-type:none;
+	  width: 412px;
+	  height: 152px;
+	  background-size:cover;
+	  text-align: center;
+
+}				
+.chooseRoomDivText{
+
+	text-align: center;
+	 margin-left:auto;
+	 margin-right:auto;
+	 width: 100%;
+	 height:100%;
+
+}
+
+.chooseRoomDivText p{
+ position: absolute; 
+width: 100%;
+ top: 10%; 
+}
+.chooseRoomDivText h2{
+ position: absolute; 
+ width: 100%;
+ top: 20%;
+ font-size: 20px;
+}
+
+.chooseRoomDivText img{
+ position: absolute; 
+ left: 40%;
+ top: 70%; 
+}
+ul li{
+	 list-style-type:none
+}
+.renwu_paishu{
+	font-size: 14px;
+}
+.word_style{
+	font-weight: 100;
+	font-size: small;
+	color: white;
+	text-shadow:none;
+}
+.word_style_big{
+	font-weight: 100;
+	font-size: x-large;
+	color: white;
+	text-shadow: none;
+}
+.table_word_style{
+font-weight: 100;
+	  word-break:keep-all;
+	  white-space:nowrap;
+	  border-collapse:separate;
+	  border-spacing:0;
+}
+ 
